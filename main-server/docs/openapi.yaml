@@ -1,0 +1,637 @@
+openapi: 3.0.0
+info:
+  title: Ticket Manager API
+  description: REST API for ticket management with webhook support using ITSM data schema
+  version: 2.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns server health status and configuration
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Server is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+                    example: Server is running
+                  port:
+                    type: integer
+                    example: 3000
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: 2026-01-29T10:00:00.000Z
+                  uptime:
+                    type: string
+                    example: 5 minutes 30 seconds
+                  memory:
+                    type: object
+                    properties:
+                      heapUsed:
+                        type: string
+                        example: 25 MB
+                      heapTotal:
+                        type: string
+                        example: 50 MB
+                      rss:
+                        type: string
+                        example: 60 MB
+
+  /api/tickets:
+    get:
+      summary: List tickets
+      description: Retrieves a list of tickets with optional filtering, pagination, and sorting
+      tags:
+        - Tickets
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+          description: Filter by ticket status (e.g., Open, Closed)
+        - in: query
+          name: priority
+          schema:
+            type: string
+          description: Filter by priority level (1, 2, 3, 4, 5, NS, NA)
+        - in: query
+          name: category
+          schema:
+            type: string
+          description: Filter by category (e.g., incident, request for information)
+        - in: query
+          name: id
+          schema:
+            type: integer
+          description: Filter by ticket ID (e.g., 4)
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search in title and description
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+          description: Maximum number of results
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+          description: Number of records to skip (pagination)
+        - in: query
+          name: sortBy
+          schema:
+            type: string
+            default: created_at
+            enum: [id, title, status, priority, category, created_at, updated_at]
+          description: Field to sort by
+        - in: query
+          name: sortOrder
+          schema:
+            type: string
+            default: DESC
+            enum: [ASC, DESC]
+          description: Sort order
+      responses:
+        '200':
+          description: List of tickets with pagination info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Ticket'
+                  pagination:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                        example: 150
+                      limit:
+                        type: integer
+                        example: 10
+                      offset:
+                        type: integer
+                        example: 0
+                      hasMore:
+                        type: boolean
+                        example: true
+    post:
+      summary: Create ticket
+      description: Creates a new ticket and triggers webhook notifications
+      tags:
+        - Tickets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  example: SUB000501
+                  description: Ticket title (from CI_Name in ITSM data)
+                description:
+                  type: string
+                  maxLength: 5000
+                  example: subapplication
+                  description: Ticket description (from CI_Cat in ITSM data)
+                priority:
+                  type: string
+                  default: '3'
+                  example: '4'
+                  description: Priority level (1, 2, 3, 4, 5, NS, NA)
+                category:
+                  type: string
+                  default: incident
+                  example: incident
+                  description: Ticket category
+                impact:
+                  type: string
+                  example: '3'
+                  description: Impact level (1, 2, 3, 4, 5, NS)
+                urgency:
+                  type: string
+                  example: '3'
+                  description: Urgency level (1, 2, 3, 4, 5, NS)
+      responses:
+        '201':
+          description: Ticket created successfully
+          content:id:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/tickets/{id}:
+    get:
+      summary: Get ticket by ID
+      description: Retrieves a single ticket by its id
+      tags:
+        - Tickets
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Ticket ID (e.g., 4)
+      responses:
+        '200':
+          description: Ticket found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Update ticket
+      description: Updates an existing ticket and triggers webhook notifications
+      tags:
+        - Tickets
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Ticket ID (e.g., 4)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                description:
+                  type: string
+                  maxLength: 5000
+                status:
+                  type: string
+                  example: Closed
+                priority:
+                  type: string
+                  example: '4'
+                category:
+                  type: string
+                  example: incident
+                impact:
+                  type: string
+                  example: '3'
+                urgency:
+                  type: string
+                  example: '3'
+      responses:
+        '200':
+          description: Ticket updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete ticket
+      description: Permanently deletes a ticket and triggers webhook notifications
+      tags:
+        - Tickets
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Ticket ID (e.g., 4)
+      responses:
+        '200':
+          description: Ticket deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Ticket deleted successfully
+                  id:
+                    type: integer
+                    example: 4
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/webhooks:
+    get:
+      summary: List webhooks
+      description: Returns all registered webhook subscriptions
+      tags:
+        - Webhooks
+      responses:
+        '200':
+          description: List of registered webhooks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Webhook'
+    post:
+      summary: Register webhook
+      description: Registers a new webhook subscription
+      tags:
+        - Webhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - payloadUrl
+                - secret
+                - events
+              properties:
+                payloadUrl:
+                  type: string
+                  format: uri
+                  example: http://localhost:5001/webhook
+                secret:
+                  type: string
+                  minLength: 8
+                  example: your-webhook-secret
+                events:
+                  type: array
+                  items:
+                    type: string
+                    enum: [ticket.created, ticket.updated, ticket.deleted]
+                  example: ["ticket.created", "ticket.updated"]
+                description:
+                  type: string
+                  example: Production webhook receiver
+      responses:
+        '201':
+          description: Webhook registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/webhooks/{id}:
+    get:
+      summary: Get webhook by ID
+      description: Retrieves a single webhook by its ID
+      tags:
+        - Webhooks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: Webhook ID
+      responses:
+        '200':
+          description: Webhook found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '404':
+          description: Webhook not found
+    put:
+      summary: Update webhook
+      description: Updates an existing webhook subscription
+      tags:
+        - Webhooks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: Webhook ID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payloadUrl:
+                  type: string
+                  format: uri
+                secret:
+                  type: string
+                events:
+                  type: array
+                  items:
+                    type: string
+                    enum: [ticket.created, ticket.updated, ticket.deleted]
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Webhook updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '404':
+          description: Webhook not found
+    delete:
+      summary: Delete webhook
+      description: Removes a webhook subscription
+      tags:
+        - Webhooks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: Webhook ID
+      responses:
+        '200':
+          description: Webhook deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Webhook deleted successfully
+                  id:
+                    type: integer
+        '404':
+          description: Webhook not found
+
+  /api/stats/summary:
+    get:
+      summary: Get ticket statistics summary
+      description: Returns comprehensive statistics about all tickets
+      tags:
+        - Statistics
+      responses:
+        '200':
+          description: Statistics summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 150
+                  byStatus:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      Open: 45
+                      Closed: 105
+                  byPriority:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      '1': 10
+                      '2': 20
+                      '3': 50
+                      '4': 40
+                      '5': 30
+                  byCategory:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      incident: 100
+                      request for information: 30
+                      request for change: 20
+                  percentages:
+                    type: object
+                    properties:
+                      byStatus:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      byPriority:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      byCategory:
+                        type: object
+                        additionalProperties:
+                          type: string
+
+components:
+  schemas:
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 4
+          description: Unique ticket identifier from ITSM data
+        title:
+          type: string
+          example: SUB000501
+          description: Ticket title (from CI_Name in ITSM data)
+        description:
+          type: string
+          example: subapplication
+          description: Ticket description (from CI_Cat in ITSM data)
+        status:
+          type: string
+          example: Open
+          description: Ticket status (Open, Closed)
+        priority:
+          type: string
+          example: '4'
+          description: Priority level (1, 2, 3, 4, 5, NS, NA)
+        category:
+          type: string
+          example: incident
+          description: Ticket category
+        impact:
+          type: string
+          nullable: true
+          example: '4'
+          description: Impact level (1, 2, 3, 4, 5, NS)
+        urgency:
+          type: string
+          nullable: true
+          example: '3'
+          description: Urgency level (1, 2, 3, 4, 5, NS)
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: 2013-08-21T11:20:00.000Z
+          description: When the ticket was opened (from Open_Time)
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: 2013-10-01T16:38:00.000Z
+          description: When the ticket was resolved (from Resolved_Time)
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: 2013-10-01T16:38:00.000Z
+          description: When the ticket was closed (only present when status is Closed)
+        updated_at:
+          type: string
+          format: date-time
+          example: 2013-10-01T16:38:00.000Z
+      description: Ticket object with conditional field visibility
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        payloadUrl:
+          type: string
+          format: uri
+          example: http://localhost:5001/webhook
+        events:
+          type: array
+          items:
+            type: string
+            enum: [ticket.created, ticket.updated, ticket.deleted]
+          example: ["ticket.created", "ticket.updated"]
+        description:
+          type: string
+          nullable: true
+          example: Production webhook receiver
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-01-29T10:00:00.000Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-01-29T10:00:00.000Z
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Validation Error
+        message:
+          type: string
+          example: Title is required
+
+tags:
+  - name: Health
+    description: Server health and status
+  - name: Tickets
+    description: Ticket CRUD operations using ITSM schema
+  - name: Webhooks
+    description: Webhook registration and management
+  - name: Statistics
+    description: Ticket statistics and analytics

@@ -1,0 +1,25 @@
+{
+  "name": "webhook-receiver",
+  "version": "1.0.0",
+  "description": "Webhook receiver server that listens for notifications from the main ticket manager server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [
+    "webhook",
+    "receiver",
+    "listener"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
