@@ -1,0 +1,28 @@
+name: Super Linter
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      statuses: write
+
+    steps:
+      - name: 1. Fazer checkout do repositório
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 2. Correr Super Linter
+        uses: super-linter/super-linter@v7
+        env:
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_ALL_CODEBASE: false
+          VALIDATE_JAVASCRIPT_ES: true
+          FILTER_REGEX_INCLUDE: .*main-server/src/.*
